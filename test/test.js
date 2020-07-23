@@ -1143,6 +1143,35 @@ describe('docx', () => {
       .should.not.be.rejectedWith(/src parameter to be set/)
   })
 
+  it('broken image from url is skipped', async () => {
+    const url = 'https://some-server.com/broken-image.png'
+
+    nock('https://some-server.com')
+      .get('/broken-image.png')
+      .replyWithFile(200, path.join(__dirname, 'broken-image.png'), {
+        'content-type': 'image/png'
+      })
+
+    const result = await reporter
+      .render({
+        template: {
+          engine: 'handlebars',
+          recipe: 'docx',
+          docx: {
+            templateAsset: {
+              content: fs.readFileSync(path.join(__dirname, 'image.docx'))
+            }
+          }
+        },
+        data: {
+          src: url
+        }
+      })
+      .should.not.be.rejectedWith(/Attempt to access memory outside buffer bounds/)
+
+    fs.writeFileSync('out_img.docx', result.content)
+  })
+
   it('image error message when src not valid param', async () => {
     return reporter
       .render({
