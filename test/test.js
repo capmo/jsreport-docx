@@ -1365,7 +1365,7 @@ describe('docx', () => {
         'content-type': 'image/png'
       })
 
-    return reporter
+    const result = await reporter
       .render({
         template: {
           engine: 'handlebars',
@@ -1381,6 +1381,8 @@ describe('docx', () => {
         }
       })
       .should.not.be.rejectedWith(/Attempt to access memory outside buffer bounds/)
+
+    fs.writeFileSync('out_img.docx', result.content)
   })
 
   it('image error message when src not valid param', async () => {
