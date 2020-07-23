@@ -40,7 +40,11 @@
     "axios": "0.19.2",
     "image-size": "0.7.4",
     "jsreport-office": "1.2.0",
+<<<<<<< HEAD
     "semaphore-async-await": "1.5.1",
+=======
+    "p-limit": "2.2.2",
+>>>>>>> dc83893... Add limit to download parallelism
     "string-replace-async": "1.2.1",
     "unescape": "1.0.1",
     "xmldom": "0.1.27"
