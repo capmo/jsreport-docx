@@ -1167,7 +1167,7 @@ describe('docx', () => {
           src: url
         }
       })
-      .should.not.be.rejectedWith(/Attempt to access memory outside buffer bounds/)
+      .should.not.be.rejectedWith(RangeError)
 
     fs.writeFileSync('out_img.docx', result.content)
   })
