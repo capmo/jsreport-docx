@@ -1143,7 +1143,7 @@ describe('docx', () => {
       .should.not.be.rejectedWith(/src parameter to be set/)
   })
 
-  it('broken image from url is skipped', async () => {
+  it('broken image from url is replaced with placeholder', async () => {
     const url = 'https://some-server.com/broken-image.png'
 
     nock('https://some-server.com')
@@ -1167,9 +1167,32 @@ describe('docx', () => {
           src: url
         }
       })
-      .should.not.be.rejectedWith(RangeError)
+      .should.not.be.rejected()
 
     fs.writeFileSync('out_img.docx', result.content)
+  })
+
+  it('broken image from file is replaced with placeholder', async () => {
+    reporter
+      .render({
+        template: {
+          engine: 'handlebars',
+          recipe: 'docx',
+          docx: {
+            templateAsset: {
+              content: fs.readFileSync(path.join(__dirname, 'image.docx'))
+            }
+          }
+        },
+        data: {
+          src:
+          'data:image/png;base64,' +
+          fs
+            .readFileSync(path.join(__dirname, 'broken-image.png'))
+            .toString('base64')
+        }
+      })
+      .should.not.be.rejected()
   })
 
   it('image error message when src not valid param', async () => {
