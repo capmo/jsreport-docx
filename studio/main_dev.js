@@ -17,7 +17,12 @@ Studio.entityEditorComponentKeyResolvers.push((entity) => {
       props: {
         icon: 'fa-link',
         embeddingCode: '',
-        helpersEntity: entity,
+        codeEntity: {
+          _id: entity._id,
+          shortid: entity.shortid,
+          name: entity.name,
+          helpers: entity.helpers
+        },
         displayName: `docx asset: ${officeAsset != null ? officeAsset.name : '<none>'}`,
         emptyMessage: 'No docx asset assigned, please add a reference to a docx asset in the properties'
       }
@@ -25,61 +30,7 @@ Studio.entityEditorComponentKeyResolvers.push((entity) => {
   }
 })
 
-Studio.addApiSpec({
-  template: {
-    docx: {
-      templateAsset: {
-        encoding: '...',
-        content: '...'
-      },
-      templateAssetShortid: '...'
-    }
-  }
-})
-
-const pendingModalsLaunch = []
-
-const pendingModalsInterval = setInterval(() => {
-  if (pendingModalsLaunch.length === 0 || Studio.isModalOpen()) {
-    return
-  }
-
-  const toLaunch = pendingModalsLaunch.splice(0, 1)
-
-  toLaunch[0]()
-
-  if (pendingModalsLaunch.length === 0) {
-    clearInterval(pendingModalsInterval)
-  }
-}, 200)
-
-Studio.previewListeners.push((request, entities) => {
-  if (request.template.recipe !== 'docx') {
-    return
-  }
-
-  if (Studio.extensions.docx.options.beta.showWarning === false) {
-    return
-  }
-
-  if (Studio.getSettingValueByKey('beta-docx-informed', false) === true) {
-    return
-  }
-
-  Studio.setSetting('beta-docx-informed', true)
-
-  const launchBetaModal = () => {
-    Studio.openModal(() => (
-      <div>
-        docx recipe is currently in the beta phase and in continuous development. There're use cases it doesn't support yet but we get there soon if you help us with <a href='https://forum.jsreport.net' target='_blank'>feedback</a>. Please note there can be breaking changes in the next versions of the recipe until we reach stable API.
-      </div>
-    ))
-  }
-
-  pendingModalsLaunch.push(launchBetaModal)
-})
-
-Studio.previewListeners.push((request, entities) => {
+Studio.runListeners.push((request, entities) => {
   if (request.template.recipe !== 'docx') {
     return
   }
@@ -96,21 +47,11 @@ Studio.previewListeners.push((request, entities) => {
     return
   }
 
-  Studio.setSetting('office-preview-informed', true)
-
-  const launchOfficeModal = () => {
-    Studio.openModal(() => <div>
+  Studio.openModal(() => (
+    <div>
       We need to upload your docx report to our publicly hosted server to be able to use
-      Office Online Service for previewing here in the studio. You can disable it in the configuration, see <a
-        href='https://jsreport.net/learn/docx' target='_blank'>https://jsreport.net/learn/docx</a> for details.
-    </div>)
-  }
-
-  pendingModalsLaunch.push(launchOfficeModal)
-})
-
-Studio.previewListeners.push(() => {
-  if (pendingModalsLaunch.length === 0) {
-    clearInterval(pendingModalsInterval)
-  }
+      Office Online Service for previewing here in the studio. You can disable it in the configuration,
+      see <a href='https://jsreport.net/learn/docx' target='_blank' rel='noreferrer'>https://jsreport.net/learn/docx</a> for details.
+    </div>
+  ))
 })

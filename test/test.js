@@ -1,46 +1,34 @@
 const should = require('should')
-const nock = require('nock')
-const jsreport = require('jsreport-core')
+const jsreport = require('@jsreport/jsreport-core')
 const fs = require('fs')
 const path = require('path')
-const util = require('util')
-const { DOMParser } = require('xmldom')
-const { decompress } = require('jsreport-office')
-const sizeOf = require('image-size')
-const textract = util.promisify(require('textract').fromBufferWithName)
-const { nodeListToArray, pxToEMU, cmToEMU } = require('../lib/utils')
-
-async function getImageSize (buf) {
-  const files = await decompress()(buf)
-  const doc = new DOMParser().parseFromString(
-    files.find(f => f.path === 'word/document.xml').data.toString()
-  )
-  const elDrawing = doc.getElementsByTagName('w:drawing')[0]
-  const wpExtendEl = elDrawing.getElementsByTagName('wp:extent')[0]
-
-  return {
-    width: parseFloat(wpExtendEl.getAttribute('cx')),
-    height: parseFloat(wpExtendEl.getAttribute('cy'))
-  }
-}
+const { DOMParser } = require('@xmldom/xmldom')
+const { decompress } = require('@jsreport/office')
+const { nodeListToArray } = require('../lib/utils')
+const WordExtractor = require('word-extractor')
+const extractor = new WordExtractor()
 
 describe('docx', () => {
   let reporter
 
   beforeEach(() => {
     reporter = jsreport({
-      templatingEngines: {
-        strategy: 'in-process'
+      store: {
+        provider: 'memory'
       }
     })
       .use(require('../')())
-      .use(require('jsreport-handlebars')())
-      .use(require('jsreport-templates')())
-      .use(require('jsreport-assets')())
+      .use(require('@jsreport/jsreport-handlebars')())
+      .use(require('@jsreport/jsreport-assets')())
+      .use(jsreport.tests.listeners())
     return reporter.init()
   })
 
-  afterEach(() => reporter.close())
+  afterEach(async () => {
+    if (reporter) {
+      await reporter.close()
+    }
+  })
 
   it('condition-with-helper-call', async () => {
     const result = await reporter.render({
@@ -66,8 +54,8 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
-    text.should.containEql('More than 2 users')
+    const doc = await extractor.extract(result.content)
+    doc.getBody().should.containEql('More than 2 users')
   })
 
   it('condition with docProps/thumbnail.jpeg in docx', async () => {
@@ -92,8 +80,8 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
-    text.should.containEql('More than 2 users')
+    const doc = await extractor.extract(result.content)
+    doc.getBody().should.containEql('More than 2 users')
   })
 
   it('variable-replace', async () => {
@@ -115,7 +103,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
     text.should.containEql('Hello world John')
   })
 
@@ -139,8 +127,8 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
-    text.should.containEql(
+    const doc = await extractor.extract(result.content)
+    doc.getBody().replace(/\n/g, ' ').should.containEql(
       'Hello world John developer Another lines John developer with Wick as lastname'
     )
   })
@@ -204,7 +192,8 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const doc = await extractor.extract(result.content)
+    const text = doc.getBody()
     text.should.containEql('T-123')
     text.should.containEql('jsreport')
     text.should.containEql('Prague 345')
@@ -227,7 +216,8 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const doc = await extractor.extract(result.content)
+    const text = doc.getEndnotes()
     text.should.containEql('endnotevalue')
   })
 
@@ -248,7 +238,8 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const doc = await extractor.extract(result.content)
+    const text = doc.getFootnotes()
     text.should.containEql('footnotevalue')
   })
 
@@ -269,7 +260,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
     text.should.containEql('website')
 
     const files = await decompress()(result.content)
@@ -306,7 +297,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getHeaders()
     text.should.containEql('jsreport')
 
     const files = await decompress()(result.content)
@@ -345,7 +336,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getFooters()
     text.should.containEql('jsreport')
 
     const files = await decompress()(result.content)
@@ -388,7 +379,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getHeaders()
     text.should.containEql('jsreport')
 
     const files = await decompress()(result.content)
@@ -427,50 +418,31 @@ describe('docx', () => {
       .should.be.eql('https://github.com')
   })
 
-  it('watermark', async () => {
+  it('link to bookmark should not break', async () => {
     const result = await reporter.render({
       template: {
         engine: 'handlebars',
         recipe: 'docx',
         docx: {
           templateAsset: {
-            content: fs.readFileSync(path.join(__dirname, 'watermark.docx'))
+            content: fs.readFileSync(path.join(__dirname, 'link-to-bookmark.docx'))
           }
         }
       },
       data: {
-        watermark: 'replacedvalue'
+        acn: '2222222',
+        companyName: 'Demo'
       }
     })
 
     fs.writeFileSync('out.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody().replace(/\t/g, ' ')
 
-    const files = await decompress()(result.content)
-    let header1 = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/header1.xml').data.toString()
-    )
-    let header2 = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/header2.xml').data.toString()
-    )
-    let header3 = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/header3.xml').data.toString()
-    )
-
-    header1
-      .getElementsByTagName('v:shape')[0]
-      .getElementsByTagName('v:textpath')[0]
-      .getAttribute('string')
-      .should.be.eql('replacedvalue')
-    header2
-      .getElementsByTagName('v:shape')[0]
-      .getElementsByTagName('v:textpath')[0]
-      .getAttribute('string')
-      .should.be.eql('replacedvalue')
-    header3
-      .getElementsByTagName('v:shape')[0]
-      .getElementsByTagName('v:textpath')[0]
-      .getAttribute('string')
-      .should.be.eql('replacedvalue')
+    text.should.containEql('1 Preliminary 1')
+    text.should.containEql('1.1 Name of the Company 1')
+    text.should.containEql('1.2 Type of Company 1')
+    text.should.containEql('1.3 Limited liability of Members 1')
+    text.should.containEql('1.4 The Guarantee 1')
   })
 
   it('list', async () => {
@@ -500,7 +472,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
     text.should.containEql('Jan')
     text.should.containEql('Boris')
   })
@@ -533,7 +505,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
 
     text.should.containEql('jsreport')
     text.should.containEql('github')
@@ -567,7 +539,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getEndnotes()
 
     text.should.containEql('note 1n')
     text.should.containEql('note 2n')
@@ -601,10 +573,62 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getFootnotes()
 
     text.should.containEql('note 1n')
     text.should.containEql('note 2n')
+  })
+
+  it('list nested', async () => {
+    const result = await reporter.render({
+      template: {
+        engine: 'handlebars',
+        recipe: 'docx',
+        docx: {
+          templateAsset: {
+            content: fs.readFileSync(path.join(__dirname, 'list-nested.docx'))
+          }
+        }
+      },
+      data: {
+        items: [{
+          name: 'Boris',
+          items: [{
+            name: 'item1'
+          }, {
+            name: 'item2'
+          }]
+        }, {
+          name: 'Junior',
+          items: [{
+            name: 'item3'
+          }, {
+            name: 'item4'
+          }]
+        }, {
+          name: 'Jan',
+          items: [{
+            name: 'item5'
+          }, {
+            name: 'item6'
+          }]
+        }]
+      }
+    })
+
+    fs.writeFileSync('out.docx', result.content)
+
+    const text = (await extractor.extract(result.content)).getBody()
+
+    text.should.containEql('Boris')
+    text.should.containEql('Junior')
+    text.should.containEql('Jan')
+    text.should.containEql('item1')
+    text.should.containEql('item2')
+    text.should.containEql('item3')
+    text.should.containEql('item4')
+    text.should.containEql('item5')
+    text.should.containEql('item6')
   })
 
   it('variable-replace-and-list-after', async () => {
@@ -626,7 +650,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody().replace(/\n/g, ' ')
     text.should.containEql(
       'This is a test John here we go Test 1 Test 2 Test 3'
     )
@@ -651,7 +675,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody().replace(/\n/g, ' ')
     text.should.containEql(
       'This is a test John here we go Test 1 Test 2 Test 3 This is another test John can you see me here'
     )
@@ -685,591 +709,6 @@ describe('docx', () => {
     ])
   })
 
-  it('table', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(path.join(__dirname, 'table.docx'))
-          }
-        }
-      },
-      data: {
-        people: [
-          {
-            name: 'Jan',
-            email: 'jan.blaha@foo.com'
-          },
-          {
-            name: 'Boris',
-            email: 'boris@foo.met'
-          },
-          {
-            name: 'Pavel',
-            email: 'pavel@foo.met'
-          }
-        ]
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
-    text.should.containEql('Jan')
-    text.should.containEql('Boris')
-  })
-
-  it('table and links', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'table-and-links.docx')
-            )
-          }
-        }
-      },
-      data: {
-        courses: [
-          {
-            name: 'The Open University',
-            description:
-              'Distance and online courses. Qualifications range from certificates, diplomas and short courses to undergraduate and postgraduate degrees.',
-            linkName: 'Go to the site1',
-            linkURL: 'http://www.openuniversity.edu/courses'
-          },
-          {
-            name: 'Coursera',
-            description:
-              'Online courses from top universities like Yale, Michigan, Stanford, and leading companies like Google and IBM.',
-            linkName: 'Go to the site2',
-            linkURL: 'https://plato.stanford.edu/'
-          },
-          {
-            name: 'edX',
-            description:
-              'Flexible learning on your schedule. Access more than 1900 online courses from 100+ leading institutions including Harvard, MIT, Microsoft, and more.',
-            linkName: 'Go to the site3',
-            linkURL: 'https://www.edx.org/'
-          }
-        ]
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
-
-    text.should.containEql('Go to the site1')
-    text.should.containEql('Go to the site2')
-    text.should.containEql('Go to the site3')
-  })
-
-  it('table and endnotes', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'table-and-endnotes.docx')
-            )
-          }
-        }
-      },
-      data: {
-        courses: [
-          {
-            name: 'The Open University',
-            description:
-              'Distance and online courses. Qualifications range from certificates, diplomas and short courses to undergraduate and postgraduate degrees.',
-            linkName: 'Go to the site1',
-            linkURL: 'http://www.openuniversity.edu/courses',
-            note: 'note site1'
-          },
-          {
-            name: 'Coursera',
-            description:
-              'Online courses from top universities like Yale, Michigan, Stanford, and leading companies like Google and IBM.',
-            linkName: 'Go to the site2',
-            linkURL: 'https://plato.stanford.edu/',
-            note: 'note site2'
-          },
-          {
-            name: 'edX',
-            description:
-              'Flexible learning on your schedule. Access more than 1900 online courses from 100+ leading institutions including Harvard, MIT, Microsoft, and more.',
-            linkName: 'Go to the site3',
-            linkURL: 'https://www.edx.org/',
-            note: 'note site3'
-          }
-        ]
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
-
-    text.should.containEql('note site1')
-    text.should.containEql('note site2')
-    text.should.containEql('note site3')
-  })
-
-  it('table and footnotes', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'table-and-footnotes.docx')
-            )
-          }
-        }
-      },
-      data: {
-        courses: [
-          {
-            name: 'The Open University',
-            description:
-              'Distance and online courses. Qualifications range from certificates, diplomas and short courses to undergraduate and postgraduate degrees.',
-            linkName: 'Go to the site1',
-            linkURL: 'http://www.openuniversity.edu/courses',
-            note: 'note site1'
-          },
-          {
-            name: 'Coursera',
-            description:
-              'Online courses from top universities like Yale, Michigan, Stanford, and leading companies like Google and IBM.',
-            linkName: 'Go to the site2',
-            linkURL: 'https://plato.stanford.edu/',
-            note: 'note site2'
-          },
-          {
-            name: 'edX',
-            description:
-              'Flexible learning on your schedule. Access more than 1900 online courses from 100+ leading institutions including Harvard, MIT, Microsoft, and more.',
-            linkName: 'Go to the site3',
-            linkURL: 'https://www.edx.org/',
-            note: 'note site3'
-          }
-        ]
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
-
-    text.should.containEql('note site1')
-    text.should.containEql('note site2')
-    text.should.containEql('note site3')
-  })
-
-  it('style', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(path.join(__dirname, 'style.docx'))
-          }
-        }
-      },
-      data: {}
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-  })
-
-  it('image', async () => {
-    const imageBuf = fs.readFileSync(path.join(__dirname, 'image.png'))
-    const imageDimensions = sizeOf(imageBuf)
-
-    const targetImageSize = {
-      width: pxToEMU(imageDimensions.width),
-      height: pxToEMU(imageDimensions.height)
-    }
-
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(path.join(__dirname, 'image.docx'))
-          }
-        }
-      },
-      data: {
-        src: 'data:image/png;base64,' + imageBuf.toString('base64')
-      }
-    })
-
-    const ouputImageSize = await getImageSize(result.content)
-
-    // should preserve original image size by default
-    ouputImageSize.width.should.be.eql(targetImageSize.width)
-    ouputImageSize.height.should.be.eql(targetImageSize.height)
-
-    fs.writeFileSync('out.docx', result.content)
-  })
-
-  it('image with placeholder size (usePlaceholderSize)', async () => {
-    const docxBuf = fs.readFileSync(
-      path.join(__dirname, 'image-use-placeholder-size.docx')
-    )
-
-    let placeholderImageSize
-
-    placeholderImageSize = await getImageSize(docxBuf)
-
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: docxBuf
-          }
-        }
-      },
-      data: {
-        src:
-          'data:image/png;base64,' +
-          fs.readFileSync(path.join(__dirname, 'image.png')).toString('base64')
-      }
-    })
-
-    const ouputImageSize = await getImageSize(result.content)
-
-    ouputImageSize.width.should.be.eql(placeholderImageSize.width)
-    ouputImageSize.height.should.be.eql(placeholderImageSize.height)
-
-    fs.writeFileSync('out.docx', result.content)
-  })
-
-  const units = ['cm', 'px']
-
-  units.forEach(unit => {
-    describe(`image size in ${unit}`, () => {
-      it('image with custom size (width, height)', async () => {
-        const docxBuf = fs.readFileSync(
-          path.join(
-            __dirname,
-            unit === 'cm'
-              ? 'image-custom-size.docx'
-              : 'image-custom-size-px.docx'
-          )
-        )
-
-        // 3cm defined in the docx
-        const targetImageSize = {
-          width: unit === 'cm' ? cmToEMU(3) : pxToEMU(100),
-          height: unit === 'cm' ? cmToEMU(3) : pxToEMU(100)
-        }
-
-        const result = await reporter.render({
-          template: {
-            engine: 'handlebars',
-            recipe: 'docx',
-            docx: {
-              templateAsset: {
-                content: docxBuf
-              }
-            }
-          },
-          data: {
-            src:
-              'data:image/png;base64,' +
-              fs
-                .readFileSync(path.join(__dirname, 'image.png'))
-                .toString('base64')
-          }
-        })
-
-        const ouputImageSize = await getImageSize(result.content)
-
-        ouputImageSize.width.should.be.eql(targetImageSize.width)
-        ouputImageSize.height.should.be.eql(targetImageSize.height)
-
-        fs.writeFileSync('out.docx', result.content)
-      })
-
-      it('image with custom size (width set and height automatic - keep aspect ratio)', async () => {
-        const docxBuf = fs.readFileSync(
-          path.join(
-            __dirname,
-            unit === 'cm'
-              ? 'image-custom-size-width.docx'
-              : 'image-custom-size-width-px.docx'
-          )
-        )
-
-        const targetImageSize = {
-          // 2cm defined in the docx
-          width: unit === 'cm' ? cmToEMU(2) : pxToEMU(100),
-          // height is calculated automatically based on aspect ratio of image
-          height:
-            unit === 'cm'
-              ? cmToEMU(0.5142851308524194)
-              : pxToEMU(25.714330708661418)
-        }
-
-        const result = await reporter.render({
-          template: {
-            engine: 'handlebars',
-            recipe: 'docx',
-            docx: {
-              templateAsset: {
-                content: docxBuf
-              }
-            }
-          },
-          data: {
-            src:
-              'data:image/png;base64,' +
-              fs
-                .readFileSync(path.join(__dirname, 'image.png'))
-                .toString('base64')
-          }
-        })
-
-        const ouputImageSize = await getImageSize(result.content)
-
-        ouputImageSize.width.should.be.eql(targetImageSize.width)
-        ouputImageSize.height.should.be.eql(targetImageSize.height)
-
-        fs.writeFileSync('out.docx', result.content)
-      })
-
-      it('image with custom size (height set and width automatic - keep aspect ratio)', async () => {
-        const docxBuf = fs.readFileSync(
-          path.join(
-            __dirname,
-            unit === 'cm'
-              ? 'image-custom-size-height.docx'
-              : 'image-custom-size-height-px.docx'
-          )
-        )
-
-        const targetImageSize = {
-          // width is calculated automatically based on aspect ratio of image
-          width:
-            unit === 'cm'
-              ? cmToEMU(7.777781879962101)
-              : pxToEMU(194.4444094488189),
-          // 2cm defined in the docx
-          height: unit === 'cm' ? cmToEMU(2) : pxToEMU(50)
-        }
-
-        const result = await reporter.render({
-          template: {
-            engine: 'handlebars',
-            recipe: 'docx',
-            docx: {
-              templateAsset: {
-                content: docxBuf
-              }
-            }
-          },
-          data: {
-            src:
-              'data:image/png;base64,' +
-              fs
-                .readFileSync(path.join(__dirname, 'image.png'))
-                .toString('base64')
-          }
-        })
-
-        const ouputImageSize = await getImageSize(result.content)
-
-        ouputImageSize.width.should.be.eql(targetImageSize.width)
-        ouputImageSize.height.should.be.eql(targetImageSize.height)
-
-        fs.writeFileSync('out.docx', result.content)
-      })
-    })
-  })
-
-  it('image error message when no src provided', async () => {
-    return reporter
-      .render({
-        template: {
-          engine: 'handlebars',
-          recipe: 'docx',
-          docx: {
-            templateAsset: {
-              content: fs.readFileSync(path.join(__dirname, 'image.docx'))
-            }
-          }
-        },
-        data: {
-          src: null
-        }
-      })
-      .should.be.rejectedWith(/src parameter to be set/)
-  })
-
-  it('image can render from url', async () => {
-    const url = 'https://some-server.com/some-image.png'
-
-    nock('https://some-server.com')
-      .get('/some-image.png')
-      .replyWithFile(200, path.join(__dirname, 'image.png'), {
-        'content-type': 'image/png'
-      })
-
-    return reporter
-      .render({
-        template: {
-          engine: 'handlebars',
-          recipe: 'docx',
-          docx: {
-            templateAsset: {
-              content: fs.readFileSync(path.join(__dirname, 'image.docx'))
-            }
-          }
-        },
-        data: {
-          src: url
-        }
-      })
-      .should.not.be.rejectedWith(/src parameter to be set/)
-  })
-
-  it('broken image from url is replaced with placeholder', async () => {
-    const url = 'https://some-server.com/broken-image.png'
-
-    nock('https://some-server.com')
-      .get('/broken-image.png')
-      .replyWithFile(200, path.join(__dirname, 'broken-image.png'), {
-        'content-type': 'image/png'
-      })
-
-    const result = await reporter
-      .render({
-        template: {
-          engine: 'handlebars',
-          recipe: 'docx',
-          docx: {
-            templateAsset: {
-              content: fs.readFileSync(path.join(__dirname, 'image.docx'))
-            }
-          }
-        },
-        data: {
-          src: url
-        }
-      })
-      .should.not.be.rejected()
-
-    fs.writeFileSync('out_img.docx', result.content)
-  })
-
-  it('broken image from file is replaced with placeholder', async () => {
-    reporter
-      .render({
-        template: {
-          engine: 'handlebars',
-          recipe: 'docx',
-          docx: {
-            templateAsset: {
-              content: fs.readFileSync(path.join(__dirname, 'image.docx'))
-            }
-          }
-        },
-        data: {
-          src:
-          'data:image/png;base64,' +
-          fs
-            .readFileSync(path.join(__dirname, 'broken-image.png'))
-            .toString('base64')
-        }
-      })
-      .should.not.be.rejected()
-  })
-
-  it('image error message when src not valid param', async () => {
-    return reporter
-      .render({
-        template: {
-          engine: 'handlebars',
-          recipe: 'docx',
-          docx: {
-            templateAsset: {
-              content: fs.readFileSync(path.join(__dirname, 'image.docx'))
-            }
-          }
-        },
-        data: {
-          src: 'data:image/gif;base64,R0lG'
-        }
-      })
-      .should.be.rejectedWith(
-        /docxImage helper requires src parameter to be valid data uri/
-      )
-  })
-
-  it('image error message when width not valid param', async () => {
-    return reporter
-      .render({
-        template: {
-          engine: 'handlebars',
-          recipe: 'docx',
-          docx: {
-            templateAsset: {
-              content: fs.readFileSync(
-                path.join(__dirname, 'image-with-wrong-width.docx')
-              )
-            }
-          }
-        },
-        data: {
-          src:
-            'data:image/png;base64,' +
-            fs
-              .readFileSync(path.join(__dirname, 'image.png'))
-              .toString('base64')
-        }
-      })
-      .should.be.rejectedWith(
-        /docxImage helper requires width parameter to be valid number with unit/
-      )
-  })
-
-  it('image error message when height not valid param', async () => {
-    return reporter
-      .render({
-        template: {
-          engine: 'handlebars',
-          recipe: 'docx',
-          docx: {
-            templateAsset: {
-              content: fs.readFileSync(
-                path.join(__dirname, 'image-with-wrong-height.docx')
-              )
-            }
-          }
-        },
-        data: {
-          src:
-            'data:image/png;base64,' +
-            fs
-              .readFileSync(path.join(__dirname, 'image.png'))
-              .toString('base64')
-        }
-      })
-      .should.be.rejectedWith(
-        /docxImage helper requires height parameter to be valid number with unit/
-      )
-  })
-
   it('loop', async () => {
     const result = await reporter.render({
       template: {
@@ -1296,7 +735,7 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
     text.should.containEql('Chapter 1')
     text.should.containEql('This is the first chapter')
     text.should.containEql('Chapter 2')
@@ -1345,7 +784,7 @@ describe('docx', () => {
             title: 'The worst developer ever'
           },
           {
-            title: `Don't need to write semicolons`
+            title: 'Don\'t need to write semicolons'
           }
         ],
         printFooter: true
@@ -1353,294 +792,42 @@ describe('docx', () => {
     })
 
     fs.writeFileSync('out.docx', result.content)
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
     text.should.containEql('Jan Blaha')
   })
 
-  it('input form control', async () => {
+  it('should not duplicate drawing object id in loop', async () => {
+    // drawing object should not contain duplicated id, otherwhise it produce a warning in ms word
     const result = await reporter.render({
       template: {
         engine: 'handlebars',
         recipe: 'docx',
         docx: {
           templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'form-control-input.docx')
-            )
+            content: fs.readFileSync(path.join(__dirname, 'dw-object-loop-id.docx'))
           }
         }
       },
       data: {
-        name: 'Erick'
+        items: [1, 2, 3]
       }
     })
 
     fs.writeFileSync('out.docx', result.content)
 
     const files = await decompress()(result.content)
+
     const doc = new DOMParser().parseFromString(
       files.find(f => f.path === 'word/document.xml').data.toString()
     )
 
-    doc
-      .getElementsByTagName('w:textInput')[0]
-      .getElementsByTagName('w:default')[0]
-      .getAttribute('w:val')
-      .should.be.eql('Erick')
-  })
+    const drawingEls = nodeListToArray(doc.getElementsByTagName('w:drawing'))
+    const baseId = 12
 
-  it('checkbox form control', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'form-control-checkbox.docx')
-            )
-          }
-        }
-      },
-      data: {
-        ready: true
-      }
+    drawingEls.forEach((drawingEl, idx) => {
+      const docPrEl = nodeListToArray(drawingEl.firstChild.childNodes).find((el) => el.nodeName === 'wp:docPr')
+      parseInt(docPrEl.getAttribute('id'), 10).should.be.eql(baseId + idx)
     })
-
-    fs.writeFileSync('out.docx', result.content)
-
-    const files = await decompress()(result.content)
-    const doc = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/document.xml').data.toString()
-    )
-
-    doc
-      .getElementsByTagName('w14:checked')[0]
-      .getAttribute('w14:val')
-      .should.be.eql('1')
-
-    doc
-      .getElementsByTagName('w:sdt')[0]
-      .getElementsByTagName('w:t')[0]
-      .textContent.should.be.eql('☒')
-  })
-
-  it('combobox form control', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'form-control-combo.docx')
-            )
-          }
-        }
-      },
-      data: {
-        val: 'vala'
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-
-    const files = await decompress()(result.content)
-    const doc = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/document.xml').data.toString()
-    )
-
-    doc.getElementsByTagName('w:sdtContent')[0]
-      .getElementsByTagName('w:t')[0]
-      .textContent.should.be.eql('display val')
-  })
-
-  it('combobox form control with constant value', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'form-control-combo-constant-value.docx')
-            )
-          }
-        }
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-
-    const files = await decompress()(result.content)
-    const doc = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/document.xml').data.toString()
-    )
-
-    doc.getElementsByTagName('w:sdtContent')[0]
-      .getElementsByTagName('w:t')[0]
-      .textContent.should.be.eql('value a')
-  })
-
-  it('combobox form control with dynamic items', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'form-control-combo-dynamic-items.docx')
-            )
-          }
-        }
-      },
-      data: {
-        val: 'b',
-        items: [
-          {
-            value: 'a',
-            text: 'Jan'
-          },
-          {
-            value: 'b',
-            text: 'Boris'
-          }
-        ]
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-
-    const files = await decompress()(result.content)
-    const doc = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/document.xml').data.toString()
-    )
-
-    doc.getElementsByTagName('w:sdtContent')[0]
-      .getElementsByTagName('w:t')[0]
-      .textContent.should.be.eql('Boris')
-  })
-
-  it('combobox form control with dynamic items in strings', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'form-control-combo-dynamic-items.docx')
-            )
-          }
-        }
-      },
-      data: {
-        val: 'Boris',
-        items: ['Jan', 'Boris']
-      }
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-
-    const files = await decompress()(result.content)
-    const doc = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/document.xml').data.toString()
-    )
-
-    doc.getElementsByTagName('w:sdtContent')[0]
-      .getElementsByTagName('w:t')[0]
-      .textContent.should.be.eql('Boris')
-  })
-
-  it('page break in single paragraph', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'page-break-single-paragraph.docx')
-            )
-          }
-        }
-      },
-      data: {}
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-
-    const files = await decompress()(result.content)
-    const doc = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/document.xml').data.toString()
-    )
-
-    const paragraphNodes = nodeListToArray(doc.getElementsByTagName('w:p'))
-
-    paragraphNodes[0]
-      .getElementsByTagName('w:t')[0]
-      .textContent.should.be.eql('Demo')
-    paragraphNodes[1].getElementsByTagName('w:br').should.have.length(1)
-    paragraphNodes[1]
-      .getElementsByTagName('w:t')[0]
-      .textContent.should.be.eql('break')
-  })
-
-  it('page break between paragraphs', async () => {
-    const result = await reporter.render({
-      template: {
-        engine: 'handlebars',
-        recipe: 'docx',
-        docx: {
-          templateAsset: {
-            content: fs.readFileSync(
-              path.join(__dirname, 'page-break-between-paragraphs.docx')
-            )
-          }
-        }
-      },
-      data: {}
-    })
-
-    fs.writeFileSync('out.docx', result.content)
-
-    const files = await decompress()(result.content)
-    const doc = new DOMParser().parseFromString(
-      files.find(f => f.path === 'word/document.xml').data.toString()
-    )
-
-    const paragraphNodes = nodeListToArray(
-      doc.getElementsByTagName('w:p')
-    ).filter(p => {
-      const breakNodes = getBreaks(p)
-
-      const hasText = getText(p) != null && getText(p) !== ''
-
-      if (!hasText && breakNodes.length === 0) {
-        return false
-      }
-
-      return true
-    })
-
-    function getText (p) {
-      const textNodes = nodeListToArray(p.getElementsByTagName('w:t')).filter(
-        t => {
-          return t.textContent != null && t.textContent !== ''
-        }
-      )
-
-      return textNodes.map(t => t.textContent).join('')
-    }
-
-    function getBreaks (p) {
-      return nodeListToArray(p.getElementsByTagName('w:br'))
-    }
-
-    getText(paragraphNodes[0]).should.be.eql('Demo some text')
-    getBreaks(paragraphNodes[1]).should.have.length(1)
-    getText(paragraphNodes[2]).should.be.eql('after break')
   })
 
   it('should be able to reference stored asset', async () => {
@@ -1662,7 +849,7 @@ describe('docx', () => {
       }
     })
 
-    const text = await textract('test.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
     text.should.containEql('Hello world John')
   })
 
@@ -1689,21 +876,149 @@ describe('docx', () => {
 
     result.content.toString().should.containEql('iframe')
   })
+
+  it('text nodes with xml:space="preserve" should continue to exists when needed', async () => {
+    const result = await reporter.render({
+      template: {
+        engine: 'handlebars',
+        recipe: 'docx',
+        docx: {
+          templateAsset: {
+            content: fs.readFileSync(path.join(__dirname, 'preserve-space.docx'))
+          }
+        }
+      },
+      data: {
+        title: 'My Table',
+        rowsItems: [
+          ['Jan', 'jan.blaha@foo.com'],
+          ['Boris', 'boris@foo.met'],
+          ['Pavel', 'pavel@foo.met']
+        ],
+        columnsItems: ['Name', 'Email']
+      }
+    })
+
+    fs.writeFileSync('out.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
+    text.should.containEql('My Table - Name')
+    text.should.containEql('My Table - Email')
+    text.should.containEql('My Table - Jan')
+    text.should.containEql('My Table - jan.blaha@foo.com')
+    text.should.containEql('My Table - Boris')
+    text.should.containEql('My Table - boris@foo.met')
+    text.should.containEql('My Table - Pavel')
+    text.should.containEql('My Table - pavel@foo.met')
+
+    const files = await decompress()(result.content)
+
+    const doc = new DOMParser().parseFromString(
+      files.find(f => f.path === 'word/document.xml').data.toString()
+    )
+
+    const textElements = nodeListToArray(doc.getElementsByTagName('w:t')).filter((node) => {
+      return node.textContent === 'My Table - '
+    })
+
+    textElements.should.have.length(8)
+
+    textElements.forEach((node) => {
+      node.getAttribute('xml:space').should.be.eql('preserve')
+    })
+  })
+
+  it('remove nodes that were just containing block helper definition calls', async () => {
+    const result = await reporter.render({
+      template: {
+        engine: 'handlebars',
+        recipe: 'docx',
+        docx: {
+          templateAsset: {
+            content: fs.readFileSync(path.join(__dirname, 'remove-block.docx'))
+          }
+        }
+      },
+      data: {
+        title: 'My Table',
+        rowsItems: [
+          ['Jan', 'jan.blaha@foo.com'],
+          ['Boris', 'boris@foo.met'],
+          ['Pavel', 'pavel@foo.met']
+        ],
+        columnsItems: ['Name', 'Email']
+      }
+    })
+
+    fs.writeFileSync('out.docx', result.content)
+    const text = (await extractor.extract(result.content)).getBody()
+    text.should.containEql('My Table - Name')
+    text.should.containEql('My Table - Email')
+    text.should.containEql('My Table - Jan')
+    text.should.containEql('My Table - jan.blaha@foo.com')
+    text.should.containEql('My Table - Boris')
+    text.should.containEql('My Table - boris@foo.met')
+    text.should.containEql('My Table - Pavel')
+    text.should.containEql('My Table - pavel@foo.met')
+
+    const files = await decompress()(result.content)
+
+    const doc = new DOMParser().parseFromString(
+      files.find(f => f.path === 'word/document.xml').data.toString()
+    )
+
+    const textElements = nodeListToArray(doc.getElementsByTagName('w:t')).filter((node) => {
+      return node.textContent === 'My Table - '
+    })
+
+    textElements.should.have.length(8)
+
+    textElements.should.matchEach((tNode) => {
+      const rNode = tNode.parentNode
+      const pNode = rNode.parentNode
+
+      let previousNode = rNode.previousSibling
+      let previousRNode
+
+      while (previousNode != null) {
+        if (previousNode.nodeName === 'w:r') {
+          previousRNode = previousNode
+          break
+        }
+
+        previousNode = previousNode.previousSibling
+      }
+
+      if (previousRNode != null) {
+        throw new Error('there should be no previous w:r node in the table cell')
+      }
+
+      let nextNode = pNode.nextSibling
+      let nextPNode
+
+      while (nextNode != null) {
+        if (nextNode.nodeName === 'w:p') {
+          nextPNode = nextNode
+          break
+        }
+
+        nextNode = nextNode.nextSibling
+      }
+
+      if (nextPNode != null) {
+        throw new Error('there should be no next w:p node in the table cell')
+      }
+    })
+  })
 })
 
 describe('docx with extensions.docx.previewInWordOnline === false', () => {
   let reporter
 
   beforeEach(() => {
-    reporter = jsreport({
-      templatingEngines: {
-        strategy: 'in-process'
-      }
-    })
+    reporter = jsreport()
       .use(require('../')({ preview: { enabled: false } }))
-      .use(require('jsreport-handlebars')())
-      .use(require('jsreport-templates')())
-      .use(require('jsreport-assets')())
+      .use(require('@jsreport/jsreport-handlebars')())
+      .use(require('@jsreport/jsreport-assets')())
     return reporter.init()
   })
 
