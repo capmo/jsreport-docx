@@ -1,6 +1,6 @@
 {
   "name": "@jsreport/jsreport-docx",
-  "version": "3.5.1",
+  "version": "3.5.2-alpha5",
   "description": "jsreport recipe rendering docx files",
   "keywords": [
     "jsreport",
@@ -30,7 +30,8 @@
     "build": "jsreport-studio-build",
     "prepublishOnly": "jsreport-studio-build",
     "start": "jsreport-studio-start --httpPort 4000",
-    "test": "mocha test --timeout 20000 && standard"
+    "test": "mocha test --timeout 20000 && standard",
+    "capmo-publish": "rimraf dist/* && npm pack --pack-destination ./dist"
   },
   "dependencies": {
     "@jsreport/office": "3.0.0",
@@ -41,6 +42,7 @@
     "js-excel-date-convert": "1.0.2",
     "moment": "2.29.4",
     "nanoid": "3.2.0",
+    "p-limit": "2.2.2",
     "parse-css-sides": "3.0.1",
     "semaphore-async-await": "1.5.1",
     "string-replace-async": "2.0.0",
@@ -56,6 +58,7 @@
     "handlebars": "4.7.7",
     "mocha": "6.1.4",
     "nock": "11.7.2",
+    "rimraf": "3.0.2",
     "should": "13.2.3",
     "standard": "16.0.4",
     "word-extractor": "1.0.4"
