@@ -262,9 +262,9 @@ function docxImage (options) {
 
   if (
     !options.hash.src.startsWith('data:image/png;base64,') &&
-      !options.hash.src.startsWith('data:image/jpeg;base64,') &&
-      !options.hash.src.startsWith('http://') &&
-      !options.hash.src.startsWith('https://')
+    !options.hash.src.startsWith('data:image/jpeg;base64,') &&
+    !options.hash.src.startsWith('http://') &&
+    !options.hash.src.startsWith('https://')
   ) {
     throw new Error(
       'docxImage helper requires src parameter to be valid data uri for png or jpeg image or a valid url. Got ' +
@@ -297,14 +297,18 @@ function docxImage (options) {
     )
   }
 
-  return new Handlebars.SafeString('$docxImage' + Buffer.from(JSON.stringify({
-    src: options.hash.src,
-    width: options.hash.width,
-    height: options.hash.height,
-    usePlaceholderSize:
-        options.hash.usePlaceholderSize === true ||
-        options.hash.usePlaceholderSize === 'true'
-  })).toString('base64') + '$')
+  const content = `$docxImage${
+    Buffer.from(JSON.stringify({
+      src: options.hash.src,
+      width: options.hash.width,
+      height: options.hash.height,
+      usePlaceholderSize:
+          options.hash.usePlaceholderSize === true ||
+          options.hash.usePlaceholderSize === 'true'
+    })).toString('base64')
+  }$`
+
+  return new Handlebars.SafeString(content)
 }
 
 function docxCheckbox (options) {
@@ -389,4 +393,35 @@ function docxHtml (options) {
 function docxTOCOptions (options) {
   const Handlebars = require('handlebars')
   return new Handlebars.SafeString('$docxTOCOptions' + Buffer.from(JSON.stringify(options.hash)).toString('base64') + '$')
+}
+
+async function docxChild (assetNamePathOrObject) {
+  const Handlebars = require('handlebars')
+
+  if (assetNamePathOrObject == null) {
+    throw new Error('docxChild helper requires asset parameter to be set')
+  }
+
+  const docxChildInfo = {}
+
+  if (typeof assetNamePathOrObject === 'object' && assetNamePathOrObject.content != null) {
+    if (typeof assetNamePathOrObject.content !== 'string') {
+      throw new Error('docxChild helper requires when asset parameter is object, a .content property exists and it to be a string')
+    }
+
+    docxChildInfo.content = assetNamePathOrObject.content
+    docxChildInfo.encoding = assetNamePathOrObject.encoding || 'base64'
+  } else {
+    if (typeof assetNamePathOrObject !== 'string') {
+      throw new Error('docxChild helper requires asset parameter to be a string or an object with .content property')
+    }
+
+    const jsreport = require('jsreport-proxy')
+    const assetBase64Content = await jsreport.assets.read(assetNamePathOrObject, 'base64')
+
+    docxChildInfo.content = assetBase64Content
+    docxChildInfo.encoding = 'base64'
+  }
+
+  return new Handlebars.SafeString(`$docxChild${Buffer.from(JSON.stringify(docxChildInfo)).toString('base64')}$`)
 }
