@@ -1733,3 +1733,69 @@ describe('docx with extensions.docx.previewInWordOnline === false', () => {
     result.content.toString().should.not.containEql('iframe')
   })
 })
+
+describe('utils.allocateFreshRid', () => {
+  const { DOMParser } = require('xmldom')
+  const { nodeListToArray, allocateFreshRid } = require('../lib/utils')
+
+  const buildRels = (ids) => {
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      ids
+        .map(
+          (id) =>
+            `<Relationship Id="${id}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/${id}.png"/>`
+        )
+        .join('') +
+      '</Relationships>'
+    const doc = new DOMParser().parseFromString(xml)
+    return nodeListToArray(doc.getElementsByTagName('Relationship'))
+  }
+
+  it('returns relsCount + 1 when no collision exists', () => {
+    const rels = buildRels(['rId1', 'rId2', 'rId3'])
+    allocateFreshRid(rels).should.be.eql(4)
+  })
+
+  it('skips an rId that would collide with an existing non-sequential id', () => {
+    // Template rels reach up to rId23 but the count is only 21, so the
+    // legacy "relsCount + 1" allocator would reuse rId22 and rId23.
+    const rels = buildRels([
+      'rId1', 'rId2', 'rId3', 'rId4', 'rId5', 'rId6', 'rId7', 'rId8',
+      'rId9', 'rId10', 'rId11', 'rId12', 'rId13', 'rId14', 'rId15',
+      'rId16', 'rId17', 'rId18', 'rId19', 'rId22', 'rId23'
+    ])
+    allocateFreshRid(rels).should.be.eql(24)
+  })
+
+  it('keeps advancing past consecutive collisions', () => {
+    const rels = buildRels(['rId1', 'rId2', 'rId3', 'rId4', 'rId5'])
+    allocateFreshRid(rels).should.be.eql(6)
+
+    const ridsWithRunOfCollisions = buildRels([
+      'rId1', 'rId4', 'rId5', 'rId6', 'rId7'
+    ])
+    // relsCount = 5, starts at 6, 6 and 7 are taken → returns 8
+    allocateFreshRid(ridsWithRunOfCollisions).should.be.eql(8)
+  })
+
+  it('handles an empty rels list', () => {
+    allocateFreshRid(buildRels([])).should.be.eql(1)
+  })
+
+  it('ignores relationships missing an Id attribute', () => {
+    // xmldom's getAttribute returns '' for missing attributes; the helper
+    // must not treat that as a real collision against the empty string.
+    const xml =
+      '<?xml version="1.0"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Type="t" Target="x"/>' +
+      '<Relationship Id="rId7" Type="t" Target="x"/>' +
+      '</Relationships>'
+    const doc = new DOMParser().parseFromString(xml)
+    const rels = nodeListToArray(doc.getElementsByTagName('Relationship'))
+    // relsCount = 2, starts at 3, rId7 is taken but doesn't matter, returns 3
+    allocateFreshRid(rels).should.be.eql(3)
+  })
+})
